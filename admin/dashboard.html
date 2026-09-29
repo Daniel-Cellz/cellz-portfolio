@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="en"><head><title>Dashboard | Cellz Creative Studio</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>tailwind.config={theme:{extend:{fontFamily:{sans:["DM Sans","sans-serif"],display:["Space Grotesk","sans-serif"]}}}}</script></head>
+<body class="bg-gray-50 text-black font-sans antialiased selection:bg-black selection:text-white">
+<header class="bg-white/90 backdrop-blur border-b border-gray-100 sticky top-0 z-40"><div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+ <div class="flex items-center gap-5"><div class="flex flex-col font-display font-extrabold text-lg tracking-tighter leading-none"><span>CELLZ</span><span class="text-xs tracking-widest text-gray-500">CREATIVE</span><span class="text-xs tracking-widest">STUDIO</span></div>
+ <span class="hidden sm:block text-xs font-bold uppercase tracking-widest text-gray-400">Admin Portal</span></div>
+ <div class="flex items-center gap-3"><a href="/" target="_blank" class="px-4 py-2 border border-gray-300 rounded-full text-xs font-medium hover:border-black">View site ↗</a>
+ <button onclick="logout()" class="px-5 py-2.5 bg-black text-white rounded-full text-sm hover:bg-gray-800">Log out</button></div></div></header>
+<main class="max-w-7xl mx-auto px-6 py-10 space-y-8">
+ <nav id="tabs" class="flex gap-2 overflow-x-auto pb-1"></nav>
+ <div id="view"></div>
+</main>
+
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=t=>t<60?t+'s':t<3600?Math.floor(t/60)+'m '+t%60+'s':Math.floor(t/3600)+'h '+Math.floor(t%3600/60)+'m';
+const C={inp:'w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:border-black transition-colors text-sm',
+ lbl:'text-xs uppercase font-bold tracking-wider text-gray-600',btn:'px-6 py-3 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-all',
+ btn2:'px-4 py-2 border border-gray-300 rounded-full text-xs font-medium hover:border-black transition-colors',card:'bg-white border border-gray-200 rounded-2xl p-6 shadow-sm',
+ h:'font-display text-xl font-bold',tag:'text-xs font-bold uppercase tracking-widest text-gray-400'};
+async function api(u,o={}){const r=await fetch(u,o);if(r.status===401){location='/admin';throw new Error('login')}
+ const d=r.status===204?null:await r.json().catch(()=>null);if(!r.ok)throw new Error(d?.error||'Something went wrong');return d}
+const J=(m,b)=>({method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+const fail=e=>{if(e.message!=='login')alert(e.message)};
+async function logout(){await fetch('/api/admin/logout',{method:'POST'});location='/admin'}
+const TABS=[['dash','Overview'],['up','Upload Creative'],['lib','Library'],['site','Hero & Slider'],['lists','Sectors & Brands'],['set','Settings']];
+let tab='dash';
+function go(t){tab=t;$('#tabs').innerHTML=TABS.map(([k,l])=>`<button onclick="go('${k}')" class="whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-medium border transition-all ${k===tab?'bg-black text-white border-black':'border-gray-300 hover:border-black bg-white'}">${l}</button>`).join('');
+ $('#view').innerHTML='<p class="text-gray-400 text-sm">Loading…</p>';({dash,up,lib,site,lists,set})[t]().catch(fail)}
+const opts=(a,sel)=>a.map(x=>`<option value="${x.id}" ${x.id==sel?'selected':''}>${esc(x.name)}</option>`).join('');
+const thumb=(i,c='w-full h-full object-cover')=>i.media_type==='video'?`<video src="${i.url}#t=0.5" muted preload="metadata" class="${c}"></video>`:`<img src="${i.url}" class="${c}">`;
+
+/* ---------- OVERVIEW ---------- */
+async function dash(){
+ const s=await api('/api/admin/stats'),mx=Math.max(1,...s.days.map(d=>d.visits)),top=s.top[0]?.view_seconds||1;
+ const bars=(a)=>{const m=Math.max(1,...a.map(x=>+x.seconds));return a.map(x=>`<div class="mb-4"><div class="flex justify-between text-sm"><span class="font-medium">${esc(x.name)}</span><span class="text-gray-500">${fmt(+x.seconds)} · ${x.works} works</span></div><div class="h-1.5 bg-gray-100 rounded-full mt-1.5"><div class="h-full bg-black rounded-full" style="width:${x.seconds/m*100}%"></div></div></div>`).join('')||'<p class="text-sm text-gray-400">No data yet</p>'};
+ $('#view').innerHTML=`<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">${[['Portfolio visits',s.visits.total],['Visits today',s.visits.today],['Creative views',s.totals.views],['Total viewing time',fmt(+s.totals.seconds)]].map(([l,v])=>`<div class="${C.card}"><p class="${C.tag}">${l}</p><p class="font-display text-4xl font-extrabold mt-2">${v}</p></div>`).join('')}</div>
+ <div class="${C.card} mt-6"><p class="${C.tag} mb-4">Visits · last 14 days</p><div class="flex items-end gap-2 h-40">${s.days.map(d=>`<div class="flex-1 h-full flex flex-col justify-end items-center gap-1"><span class="text-[10px] text-gray-400">${d.visits||''}</span><div class="w-full bg-black rounded-t" style="height:${d.visits/mx*75}%;min-height:3px;opacity:${d.visits?1:.12}"></div><span class="text-[10px] text-gray-400">${d.day.slice(8)}</span></div>`).join('')}</div></div>
+ <div class="${C.card} mt-6"><p class="${C.tag} mb-4">Designs with the highest viewing time</p>${s.top.length?s.top.map((i,n)=>`<div class="flex items-center gap-4 py-3 border-b border-gray-100 last:border-0"><span class="font-display font-bold text-gray-300 w-6">${n+1}</span><div class="w-20 h-14 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">${thumb(i)}</div><div class="flex-1 min-w-0"><p class="font-bold text-sm truncate">${esc(i.title)}</p><p class="text-xs text-gray-400">${esc(i.sector)} · ${esc(i.brand)} · ${i.view_count} opens</p><div class="h-1 bg-gray-100 rounded-full mt-2"><div class="h-full bg-black rounded-full" style="width:${i.view_seconds/top*100}%"></div></div></div><span class="font-display font-bold">${fmt(i.view_seconds)}</span></div>`).join(''):'<p class="text-sm text-gray-400">Upload creatives and viewing time will show up here.</p>'}</div>
+ <div class="grid md:grid-cols-2 gap-6 mt-6"><div class="${C.card}"><p class="${C.tag} mb-4">Viewing time by sector</p>${bars(s.by_sector)}</div><div class="${C.card}"><p class="${C.tag} mb-4">Viewing time by brand</p>${bars(s.by_brand)}</div></div>`}
+
+/* ---------- UPLOAD ---------- */
+async function up(){
+ const [sc,br]=await Promise.all([api('/api/admin/list/sectors'),api('/api/admin/list/brands')]);
+ $('#view').innerHTML=`<div class="${C.card} max-w-2xl space-y-5"><div><p class="${C.tag}">New work</p><h2 class="font-display text-3xl font-extrabold tracking-tight mt-1">UPLOAD CREATIVE</h2></div>
+ <div class="space-y-2"><label class="${C.lbl}">File (image or video)</label><input id="uf" type="file" accept="image/*,video/*" class="${C.inp}"></div>
+ <div class="space-y-2"><label class="${C.lbl}">Title</label><input id="ut" class="${C.inp}" placeholder="e.g. Summer Campaign Key Visual"></div>
+ <div class="grid sm:grid-cols-2 gap-5"><div class="space-y-2"><label class="${C.lbl}">Sector / Skill</label><select id="us" class="${C.inp}">${opts(sc)}<option value="new">＋ Add new skill role…</option></select></div>
+ <div class="space-y-2"><label class="${C.lbl}">Done for (brand)</label><select id="ub" class="${C.inp}">${opts(br)}<option value="new">＋ Add new brand…</option></select></div></div>
+ <button id="ubtn" onclick="doUp()" class="${C.btn} w-full">Upload &amp; publish</button>
+ <p class="text-xs text-gray-500">The work appears in its sector on the portfolio and is linked to the brand, so clicking that brand shows all its work across every sector.</p></div>`;
+ [['us','sectors','skill role'],['ub','brands','brand']].forEach(([id,kind,label])=>{const el=document.getElementById(id);el.dataset.prev=el.value;
+  el.onchange=async()=>{if(el.value!=='new'){el.dataset.prev=el.value;return}
+   const n=prompt('New '+label+' name:');if(!n||!n.trim()){el.value=el.dataset.prev;return}
+   try{const r=await api('/api/admin/list/'+kind,J('POST',{name:n}));const o=new Option(r.name,r.id);el.add(o,el.options[el.options.length-1]);el.value=r.id;el.dataset.prev=r.id}catch(e){fail(e);el.value=el.dataset.prev}}})}
+async function doUp(){
+ const f=uf.files[0],t=ut.value.trim();if(!f||!t)return alert('Choose a file and enter a title.');
+ const fd=new FormData();fd.append('file',f);fd.append('title',t);fd.append('sector_id',us.value);fd.append('brand_id',ub.value);
+ ubtn.textContent='Uploading… please wait';ubtn.disabled=true;
+ try{await api('/api/admin/creatives',{method:'POST',body:fd});go('lib')}catch(e){fail(e);ubtn.textContent='Upload & publish';ubtn.disabled=false}}
+
+/* ---------- LIBRARY ---------- */
+let LIBFILTER='';
+async function lib(){
+ const [items,sc,br]=await Promise.all([api('/api/admin/creatives'),api('/api/admin/list/sectors'),api('/api/admin/list/brands')]);
+ const list=LIBFILTER?items.filter(i=>i.sector_id==LIBFILTER):items;
+ $('#view').innerHTML=`<div class="flex flex-wrap justify-between items-center gap-3 mb-6"><h2 class="font-display text-3xl font-extrabold tracking-tight">LIBRARY <span class="text-gray-300">(${list.length})</span></h2>
+ <select onchange="LIBFILTER=this.value;lib()" class="${C.inp} !w-auto"><option value="">All sectors</option>${opts(sc,LIBFILTER)}</select></div>
+ ${list.length?`<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">${list.map(i=>`<div class="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm"><div class="aspect-video bg-gray-100">${thumb(i)}</div><div class="p-4 space-y-3">
+ <input class="${C.inp}" value="${esc(i.title)}" onchange="edit(${i.id},this)" data-f="title">
+ <div class="grid grid-cols-2 gap-2"><select class="${C.inp}" data-f="sector_id" onchange="edit(${i.id},this)">${opts(sc,i.sector_id)}</select><select class="${C.inp}" data-f="brand_id" onchange="edit(${i.id},this)">${opts(br,i.brand_id)}</select></div>
+ <div class="flex items-center justify-between"><span class="text-xs text-gray-500">${i.view_count} opens · ${fmt(i.view_seconds)}</span><button onclick="del(${i.id})" class="${C.btn2}">Delete</button></div></div></div>`).join('')}</div>`:'<div class="'+C.card+' text-center text-gray-400 text-sm">Nothing here yet. Use “Upload Creative”.</div>'}`}
+async function edit(id,el){const box=el.closest('.p-4');const g=f=>box.querySelector('[data-f='+f+']').value;
+ try{await api('/api/admin/creatives/'+id,J('PUT',{title:g('title'),sector_id:g('sector_id'),brand_id:g('brand_id')}))}catch(e){fail(e)}}
+async function del(id){if(!confirm('Delete this creative permanently?'))return;try{await api('/api/admin/creatives/'+id,{method:'DELETE'});lib()}catch(e){fail(e)}}
+
+/* ---------- HERO & SLIDER ---------- */
+async function site(){
+ const m=await api('/api/admin/site'),hero=m.find(x=>x.kind==='hero'),sl=m.filter(x=>x.kind==='slider');
+ $('#view').innerHTML=`<div class="grid lg:grid-cols-2 gap-6"><div class="${C.card} space-y-4"><p class="${C.h}">Hero background video</p>
+ ${hero?`<video src="${hero.url}" controls muted class="w-full rounded-xl bg-black"></video>`:'<p class="text-sm text-gray-400">Using the original video from your VIDEO folder.</p>'}
+ <input id="hf" type="file" accept="video/*" class="${C.inp}"><div class="flex gap-3"><button onclick="setHero()" class="${C.btn}">${hero?'Replace':'Upload'} video</button>${hero?`<button onclick="rmSite(${hero.id})" class="${C.btn2}">Remove</button>`:''}</div></div>
+ <div class="${C.card} space-y-4"><p class="${C.h}">About-section slider pictures</p>
+ <div class="grid grid-cols-3 gap-3">${sl.map(s=>`<div class="relative aspect-[4/5] rounded-xl overflow-hidden bg-gray-100"><img src="${s.url}" class="w-full h-full object-cover"><button onclick="rmSite(${s.id})" class="absolute top-2 right-2 w-7 h-7 rounded-full bg-black text-white text-xs">✕</button></div>`).join('')||'<p class="text-sm text-gray-400 col-span-3">Using the original pictures from your IMAGE folder.</p>'}</div>
+ <input id="sf" type="file" accept="image/*" multiple class="${C.inp}"><button onclick="addSlides()" class="${C.btn}">Add pictures</button>
+ <p class="text-xs text-gray-500">Once you add pictures here, they replace the original slider pictures.</p></div></div>`}
+async function setHero(){const f=hf.files[0];if(!f)return alert('Choose a video first');const fd=new FormData();fd.append('file',f);try{await api('/api/admin/site/hero',{method:'POST',body:fd});site()}catch(e){fail(e)}}
+async function addSlides(){if(!sf.files.length)return alert('Choose pictures first');const fd=new FormData();[...sf.files].forEach(f=>fd.append('files',f));try{await api('/api/admin/site/slider',{method:'POST',body:fd});site()}catch(e){fail(e)}}
+async function rmSite(id){if(!confirm('Remove this?'))return;try{await api('/api/admin/site/'+id,{method:'DELETE'});site()}catch(e){fail(e)}}
+
+/* ---------- SECTORS & BRANDS ---------- */
+async function lists(){
+ const [sc,br]=await Promise.all([api('/api/admin/list/sectors'),api('/api/admin/list/brands')]);
+ const box=(kind,title,a,ph)=>`<div class="${C.card} space-y-3"><p class="${C.h}">${title}</p>${a.map(x=>`<div class="flex items-center gap-2"><input class="${C.inp}" value="${esc(x.name)}" onchange="ren('${kind}',${x.id},this.value)"><span class="text-xs text-gray-500 whitespace-nowrap w-16">${x.works} works</span><button onclick="rm('${kind}',${x.id})" class="${C.btn2}">✕</button></div>`).join('')}
+ <div class="flex gap-2 pt-3 border-t border-gray-100"><input id="n-${kind}" class="${C.inp}" placeholder="${ph}"><button onclick="add('${kind}')" class="${C.btn} whitespace-nowrap">＋ Add</button></div></div>`;
+ $('#view').innerHTML=`<div class="grid lg:grid-cols-2 gap-6">${box('sectors','Sectors / skill roles',sc,'e.g. UI/UX Design')}${box('brands','Brands',br,'e.g. Nike')}</div>`}
+async function add(k){const el=document.getElementById('n-'+k);if(!el.value.trim())return;try{await api('/api/admin/list/'+k,J('POST',{name:el.value}));lists()}catch(e){fail(e)}}
+async function ren(k,id,v){try{await api(`/api/admin/list/${k}/${id}`,J('PUT',{name:v}))}catch(e){fail(e);lists()}}
+async function rm(k,id){if(!confirm('Delete this?'))return;try{await api(`/api/admin/list/${k}/${id}`,{method:'DELETE'});lists()}catch(e){fail(e)}}
+
+/* ---------- SETTINGS ---------- */
+async function set(){
+ $('#view').innerHTML=`<div class="${C.card} max-w-md space-y-4"><p class="${C.h}">Change password</p>
+ <input id="pc" type="password" placeholder="Current password" class="${C.inp}"><input id="pn" type="password" placeholder="New password (min 6 characters)" class="${C.inp}">
+ <button onclick="chg()" class="${C.btn}">Update password</button></div>`}
+async function chg(){try{await api('/api/admin/password',J('POST',{current:pc.value,new:pn.value}));alert('Password updated');pc.value=pn.value=''}catch(e){fail(e)}}
+go('dash');
+</script>
+</body></html>
