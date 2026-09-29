@@ -15,15 +15,27 @@ load_dotenv(HERE / '.env')
 UPLOADS = ROOT / 'uploads'
 UPLOADS.mkdir(exist_ok=True)
 
+# Where do uploaded files live?
+#  - If SUPABASE_URL and SUPABASE_SECRET_KEY are set  -> in your Supabase Storage bucket (online)
+#  - Otherwise                                          -> in the local "uploads" folder (your PC)
+SB_URL = (os.getenv('SUPABASE_URL') or '').rstrip('/')
+SB_KEY = os.getenv('SUPABASE_SECRET_KEY') or ''
+SB_BUCKET = os.getenv('SUPABASE_BUCKET') or 'uploads'
+REMOTE = bool(SB_URL and SB_KEY)
+PFX = f'{SB_URL}/storage/v1/object/public/{SB_BUCKET}/' if REMOTE else '/uploads/'
+
 app = Flask(__name__, static_folder=None)
 app.secret_key = os.getenv('SECRET_KEY', 'change-me')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024   # 500 MB per request
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
+                  SESSION_COOKIE_SECURE=os.getenv('PRODUCTION') == '1')   # PRODUCTION=1 is set on the live site only
 
 IMG = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 VID = {'mp4', 'webm', 'mov', 'm4v'}
 
 # ---------- database helper ----------
 def q(sql, args=(), one=False):
+    sql = sql.replace("'/uploads/'", "'" + PFX + "'")   # file addresses point to the right place
     con = psycopg2.connect(os.getenv('DATABASE_URL'))
     try:
         with con, con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -34,16 +46,39 @@ def q(sql, args=(), one=False):
     finally:
         con.close()
 
+def sb_call(method, name, body=None, ctype=None):
+    req = urllib.request.Request(f'{SB_URL}/storage/v1/object/{SB_BUCKET}/{name}', data=body, method=method,
+        headers={'Authorization': 'Bearer ' + SB_KEY, 'apikey': SB_KEY,
+                 'Content-Type': ctype or 'application/octet-stream', 'User-Agent': 'cellz-portfolio/1.0'})
+    return urllib.request.urlopen(req, timeout=120)
+
 def save_file(f, allowed):
+    from werkzeug.exceptions import BadRequest
     ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
     if ext not in allowed:
-        from werkzeug.exceptions import BadRequest
         raise BadRequest('Unsupported file type: .' + ext)
     name = f'{uuid.uuid4().hex}.{ext}'
-    f.save(UPLOADS / name)
+    if REMOTE:
+        data = f.read()
+        if len(data) > 50 * 1024 * 1024:
+            raise BadRequest('This file is over 50 MB, the free storage limit. Please compress it and try again.')
+        try:
+            sb_call('POST', name, data, f.mimetype)
+        except urllib.error.HTTPError as e:
+            print('Supabase upload error', e.code, e.read().decode())
+            raise BadRequest('Upload to storage failed. Check the server log for the reason.')
+        except Exception as e:
+            print('Supabase upload error', e)
+            raise BadRequest('Upload to storage failed. Check the server log for the reason.')
+    else:
+        f.save(UPLOADS / name)
     return name, ('video' if ext in VID else 'image')
 
 def rm_file(name):
+    if REMOTE:
+        try: sb_call('DELETE', name)
+        except Exception as e: print('Supabase delete error', e)
+        return
     try: (UPLOADS / name).unlink()
     except FileNotFoundError: pass
 
