@@ -1,4 +1,6 @@
-import os, sys, uuid
+import os, sys, uuid, re, json, time
+import urllib.request, urllib.error
+from html import escape
 from pathlib import Path
 from functools import wraps
 import psycopg2, psycopg2.extras
@@ -255,6 +257,49 @@ def slider_add():
 def site_del(i):
     r = q('DELETE FROM site_media WHERE id=%s RETURNING file_path', (i,), one=True)
     if r: rm_file(r['file_path'])
+    return jsonify(ok=True)
+
+# ---------- contact form -> Resend ----------
+RATE = {}   # simple spam guard: max 5 messages per hour per visitor
+
+@app.post('/api/contact')
+def contact():
+    d = request.get_json(silent=True) or {}
+    if d.get('website'):                       # hidden trap field: bots fill it in
+        return jsonify(ok=True)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+    now = time.time()
+    RATE[ip] = [t for t in RATE.get(ip, []) if now - t < 3600]
+    if len(RATE[ip]) >= 5:
+        return jsonify(error='Too many messages. Please try again later.'), 429
+    name = (d.get('name') or '').strip()[:100]
+    email = (d.get('email') or '').strip()[:200]
+    subject = re.sub(r'[\r\n]+', ' ', (d.get('subject') or 'General enquiry').strip())[:100]
+    message = (d.get('message') or '').strip()[:5000]
+    if not name or not message or not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        return jsonify(error='Please fill in your name, a valid email and a message.'), 400
+    key, to = os.getenv('RESEND_API_KEY'), os.getenv('CONTACT_TO_EMAIL')
+    if not key or not to:
+        return jsonify(error='Email is not configured yet.'), 500
+    payload = {
+        'from': os.getenv('CONTACT_FROM_EMAIL', 'Cellz Portfolio <onboarding@resend.dev>'),
+        'to': [to],
+        'reply_to': email,                      # hitting Reply answers the visitor directly
+        'subject': f'New enquiry: {subject} - {name}',
+        'html': f'<p><b>Name:</b> {escape(name)}<br><b>Email:</b> {escape(email)}<br>'
+                f'<b>Category:</b> {escape(subject)}</p><p>{escape(message).replace(chr(10), "<br>")}</p>',
+    }
+    req = urllib.request.Request('https://api.resend.com/emails', data=json.dumps(payload).encode(), method='POST',
+        headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'cellz-portfolio/1.0'})
+    try:
+        urllib.request.urlopen(req, timeout=15)
+    except urllib.error.HTTPError as e:
+        print('Resend error', e.code, e.read().decode())      # shows the reason in your terminal
+        return jsonify(error='Your message could not be sent. Please try again.'), 502
+    except Exception as e:
+        print('Resend error', e)
+        return jsonify(error='Your message could not be sent. Please try again.'), 502
+    RATE[ip].append(now)
     return jsonify(ok=True)
 
 # ---------- run ----------

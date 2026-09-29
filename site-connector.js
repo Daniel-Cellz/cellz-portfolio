@@ -137,5 +137,29 @@
   }
   document.querySelectorAll('.marquee-content button').forEach(b => { b.onclick = () => filterByBrand(b.dataset.brand); pounce(b); });
 
+  /* 9. contact form -> your backend -> Resend email */
+  const form = document.getElementById('contact-form') || document.querySelector('#contact form');
+  if (form) {
+    form.removeAttribute('action'); form.removeAttribute('method');
+    const trap = document.createElement('input');
+    trap.type = 'text'; trap.name = 'website'; trap.tabIndex = -1; trap.autocomplete = 'off';
+    trap.setAttribute('aria-hidden', 'true'); trap.style.cssText = 'position:absolute;left:-9999px;height:0;width:0;opacity:0';
+    form.appendChild(trap);
+    const note = document.createElement('p'); note.className = 'hidden'; form.appendChild(note);
+    const sb = form.querySelector('button[type=submit]');
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const label = sb.textContent; sb.disabled = true; sb.textContent = 'Sending...'; note.className = 'hidden';
+      try {
+        const r = await fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'Something went wrong. Please try again.');
+        form.reset(); note.textContent = 'Message sent! Thank you, I will get back to you shortly.';
+        note.className = 'text-sm text-center text-green-600 font-medium';
+      } catch (err) { note.textContent = err.message; note.className = 'text-sm text-center text-red-600 font-medium'; }
+      sb.disabled = false; sb.textContent = label;
+    });
+  }
+
   renderCategories();
 })();
